@@ -66,7 +66,7 @@
 <div id="errbar" style="display:none;position:fixed;top:0;left:0;right:0;z-index:99999;background:#b00020;color:#fff;padding:8px 12px;font-size:13px;font-family:Tajawal"></div>
 <div id="wrap">
  <div id="side">
-  <div class="hd">🗺️ محافظات المملكة — المجموعات وقياس المسافات <span style="font-size:10px;color:#9fb6d0;font-weight:400">نسخة 09-07 16:50</span>
+  <div class="hd">🗺️ محافظات المملكة — المجموعات وقياس المسافات <span style="font-size:10px;color:#9fb6d0;font-weight:400">نسخة 09-07 16:56</span>
    <a href="dashboard.html" style="float:left;background:#2e7d32;color:#fff;padding:4px 10px;border-radius:7px;font-size:12px;font-weight:700;text-decoration:none">📊 لوحة الفرق</a></div>
 
   <div class="sec"><div class="lab">الفئة العمرية:</div>
@@ -145,7 +145,7 @@ optCtl.onAdd=function(){const d=L.DomUtil.create('div','mapopts');
     '<label><input type="checkbox" id="names" onchange="toggleNames()"> أسماء كل المدن</label>'+
     '<label><input type="checkbox" id="gnames" onchange="renderGroupLabels()"> أسماء المجموعات</label>'+
     '<label><input type="checkbox" id="lines" checked onchange="toggleLines()"> خطوط المجموعات</label>'+
-    '<label><input type="checkbox" id="onlycomp" onchange="toggleComplete()"> المكتملة في كل الفئات فقط</label>'+
+    '<label><input type="checkbox" id="onlycomp" onchange="toggleComplete()"> المكتملة في فئة واحدة على الأقل</label>'+
     '<label><input type="checkbox" id="vnone" checked onchange="toggleNone()"> محافظات خارج المجموعات</label>';
   L.DomEvent.disableClickPropagation(d);L.DomEvent.disableScrollPropagation(d);return d;};
 optCtl.addTo(map);
@@ -272,15 +272,16 @@ function dsLabel(age){return /^[0-9]/.test(age)?'تحت '+age:age;}
 // ===== اكتمال المجموعات (يُحسب من أعداد الفرق لكل مدينة/فئة) =====
 let onlyComplete=false;
 const TARGET=DATA.target||6;
-// الاكتمال يُقاس على «كل الفئات السبع» (تحت 5 حتى تحت 14) لا على فئات النطاق المعروض فقط
+// الاكتمال يُقاس على «كل الفئات السبع» (تحت 5 حتى تحت 14): المجموعة مكتملة إذا بلغت
+// الهدف (٦ فرق) في فئة واحدة على الأقل من الفئات السبع.
 function rangeAges(){return (DATA.ranges&&DATA.ranges[ageOf(curKey)])||[];}
 function compAges(){return DATA.allAges||[];}
 function clusterAgeTotal(cities,age){const cc=(DATA.cityCounts&&DATA.cityCounts[age])||{};
   let s=0;cities.forEach(c=>{s+=(cc[c]||0);});return s;}
-function clusterMinTotal(cities){const ags=compAges();if(!ags.length)return null;
-  return Math.min.apply(null,ags.map(a=>clusterAgeTotal(cities,a)));}
+function clusterDoneAges(cities){const ags=compAges();
+  return ags.filter(a=>clusterAgeTotal(cities,a)>=TARGET).length;}
 function clusterDone(cities){const ags=compAges();if(!ags.length)return true;
-  return ags.every(a=>clusterAgeTotal(cities,a)>=TARGET);}
+  return clusterDoneAges(cities)>=1;}
 function passComplete(id){if(!onlyComplete)return true;const c=CL[id];return c?clusterDone(c.cities):false;}
 function toggleComplete(){onlyComplete=document.getElementById('onlycomp').checked;renderAll();}
 function ages(){const a=[];Object.keys(DS).forEach(k=>{const g=ageOf(k);if(!a.includes(g))a.push(g);});return a;}
@@ -504,14 +505,15 @@ function toggleNames(){const on=document.getElementById('names').checked;
     if(on)m.bindTooltip(p.n,{permanent:true,direction:'right',className:'lbl',offset:[6,0]}).openTooltip();
     else{m.unbindTooltip();m.bindTooltip(p.n,{direction:'top'});}});}
 
-// تمييز العدد للفرق
-function nTeam(n){n=+n||0;if(n===0)return 'لا فرق';if(n===1)return 'فريق واحد';if(n===2)return 'فريقان';
-  const t=n%100;return (t>=3&&t<=10)?(n+' فرق'):(n+' فريقًا');}
-// شارة الاكتمال لمجموعة
+// تمييز العدد للفئات
+function nCat(n){n=+n||0;if(n===1)return 'فئة واحدة';if(n===2)return 'فئتان';
+  const t=n%100;return (t>=3&&t<=10)?(n+' فئات'):(n+' فئة');}
+// شارة الاكتمال لمجموعة (مكتملة = بلغت الهدف في فئة واحدة على الأقل)
 function compChip(cities){const ags=compAges();if(!ags.length)return '';
-  const mn=clusterMinTotal(cities),done=mn>=TARGET;
+  const dn=clusterDoneAges(cities),done=dn>=1;
+  const lbl=dn===0?'لم تكتمل في أي فئة':(dn===ags.length?'مكتملة في كل الفئات':('مكتملة في '+nCat(dn)));
   return '<span class="compb" style="background:'+(done?'#1a9850':'#c0392b')+'">'+
-    (done?'✓ مكتملة':'✗ ناقصة')+'</span> <span class="ctm">أقل فئة: '+nTeam(mn)+'</span>';}
+    (done?'✓ مكتملة':'✗ غير مكتملة')+'</span> <span class="ctm">'+lbl+'</span>';}
 // قائمة المجموعات
 function renderList(){const cl=document.getElementById('cllist');cl.innerHTML='';
   const ids=Object.keys(CL).sort((a,b)=>clKey(a)-clKey(b));
