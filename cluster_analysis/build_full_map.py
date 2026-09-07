@@ -186,7 +186,7 @@ RANGES = {"5-9":   [a for a in _AGES if _age_num(a) <= 9],
           "11-14": [a for a in _AGES if _age_num(a) >= 11]}
 
 DATA = {"points": P, "datasets": DATASETS, "vcolor": VERDICT_COLOR, "matrix": matrix, "pop": POP,
-        "cityCounts": CITY_COUNTS, "target": _TARGET, "ranges": RANGES}
+        "cityCounts": CITY_COUNTS, "target": _TARGET, "ranges": RANGES, "allAges": _AGES}
 
 json.dump(P, open("/home/user/khitba/cluster_analysis/points.json", "w", encoding="utf-8"),
           ensure_ascii=False)
@@ -342,7 +342,7 @@ optCtl.onAdd=function(){const d=L.DomUtil.create('div','mapopts');
     '<label><input type="checkbox" id="names" onchange="toggleNames()"> أسماء كل المدن</label>'+
     '<label><input type="checkbox" id="gnames" onchange="renderGroupLabels()"> أسماء المجموعات</label>'+
     '<label><input type="checkbox" id="lines" checked onchange="toggleLines()"> خطوط المجموعات</label>'+
-    '<label><input type="checkbox" id="onlycomp" onchange="toggleComplete()"> المجموعات المكتملة فقط</label>'+
+    '<label><input type="checkbox" id="onlycomp" onchange="toggleComplete()"> المكتملة في كل الفئات فقط</label>'+
     '<label><input type="checkbox" id="vnone" checked onchange="toggleNone()"> محافظات خارج المجموعات</label>';
   L.DomEvent.disableClickPropagation(d);L.DomEvent.disableScrollPropagation(d);return d;};
 optCtl.addTo(map);
@@ -469,12 +469,14 @@ function dsLabel(age){return /^[0-9]/.test(age)?'تحت '+age:age;}
 // ===== اكتمال المجموعات (يُحسب من أعداد الفرق لكل مدينة/فئة) =====
 let onlyComplete=false;
 const TARGET=DATA.target||6;
+// الاكتمال يُقاس على «كل الفئات السبع» (تحت 5 حتى تحت 14) لا على فئات النطاق المعروض فقط
 function rangeAges(){return (DATA.ranges&&DATA.ranges[ageOf(curKey)])||[];}
+function compAges(){return DATA.allAges||[];}
 function clusterAgeTotal(cities,age){const cc=(DATA.cityCounts&&DATA.cityCounts[age])||{};
   let s=0;cities.forEach(c=>{s+=(cc[c]||0);});return s;}
-function clusterMinTotal(cities){const ags=rangeAges();if(!ags.length)return null;
+function clusterMinTotal(cities){const ags=compAges();if(!ags.length)return null;
   return Math.min.apply(null,ags.map(a=>clusterAgeTotal(cities,a)));}
-function clusterDone(cities){const ags=rangeAges();if(!ags.length)return true;
+function clusterDone(cities){const ags=compAges();if(!ags.length)return true;
   return ags.every(a=>clusterAgeTotal(cities,a)>=TARGET);}
 function passComplete(id){if(!onlyComplete)return true;const c=CL[id];return c?clusterDone(c.cities):false;}
 function toggleComplete(){onlyComplete=document.getElementById('onlycomp').checked;renderAll();}
@@ -703,7 +705,7 @@ function toggleNames(){const on=document.getElementById('names').checked;
 function nTeam(n){n=+n||0;if(n===0)return 'لا فرق';if(n===1)return 'فريق واحد';if(n===2)return 'فريقان';
   const t=n%100;return (t>=3&&t<=10)?(n+' فرق'):(n+' فريقًا');}
 // شارة الاكتمال لمجموعة
-function compChip(cities){const ags=rangeAges();if(!ags.length)return '';
+function compChip(cities){const ags=compAges();if(!ags.length)return '';
   const mn=clusterMinTotal(cities),done=mn>=TARGET;
   return '<span class="compb" style="background:'+(done?'#1a9850':'#c0392b')+'">'+
     (done?'✓ مكتملة':'✗ ناقصة')+'</span> <span class="ctm">أقل فئة: '+nTeam(mn)+'</span>';}
@@ -713,7 +715,7 @@ function renderList(){const cl=document.getElementById('cllist');cl.innerHTML=''
   const doneCnt=ids.filter(id=>clusterDone(CL[id].cities)).length;
   const cc=document.getElementById('clcount');
   if(cc)cc.innerHTML=(onlyComplete?doneCnt:ids.length)+
-    (rangeAges().length?' <span class="ctm">('+doneCnt+' مكتملة من '+ids.length+')</span>':'');
+    (compAges().length?' <span class="ctm">('+doneCnt+' مكتملة من '+ids.length+')</span>':'');
   ids.forEach(id=>{if(onlyComplete&&!clusterDone(CL[id].cities))return;
     const c=CL[id],st=stats(c.cities);
     const[v,vc]=verdict(st.mx/60,c.cities.length);
