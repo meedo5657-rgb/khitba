@@ -160,7 +160,33 @@ print("عدد خيارات التجميع:", len(DATASETS), "->", list(DATASETS.
 
 P = [{"n": n, "lat": v["lat"], "lon": v["lon"], "region": v["region"],
       "cat": v["cat"]} for n, v in points.items()]
-DATA = {"points": P, "datasets": DATASETS, "vcolor": VERDICT_COLOR, "matrix": matrix, "pop": POP}
+
+# ===== اكتمال المجموعات: عدد الفرق لكل مدينة لكل فئة (من الإكسل عبر teams2.json) =====
+# مجموعة «مكتملة» = بلغت الهدف (٦ فرق) في كل فئات نطاقها. الحساب بالمدن ليعمل مع أي
+# خيار تجميع أو تعديل يدوي، ومطابقًا لتعريف «المكتملة» في صفحة التقسيم.
+CITY_COUNTS = {}          # فئة -> مدينة -> عدد الفرق
+_TARGET = 6
+try:
+    _tj = json.load(open("/home/user/khitba/cluster_analysis/teams2.json", encoding="utf-8"))
+    for _r in _tj.get("rows", []):
+        CITY_COUNTS.setdefault(_r["age"], {})
+        CITY_COUNTS[_r["age"]][_r["city"]] = CITY_COUNTS[_r["age"]].get(_r["city"], 0) + _r.get("count", 0)
+    try:
+        _TARGET = json.load(open("/home/user/khitba/cluster_analysis/split_data.json",
+                                 encoding="utf-8")).get("target", 6)
+    except Exception:
+        pass
+except Exception:
+    CITY_COUNTS = {}
+# ربط نطاق الخريطة بفئاته
+def _age_num(a):
+    m = re.search(r"\d+", a); return int(m.group()) if m else 0
+_AGES = sorted(CITY_COUNTS.keys(), key=_age_num)
+RANGES = {"5-9":   [a for a in _AGES if _age_num(a) <= 9],
+          "11-14": [a for a in _AGES if _age_num(a) >= 11]}
+
+DATA = {"points": P, "datasets": DATASETS, "vcolor": VERDICT_COLOR, "matrix": matrix, "pop": POP,
+        "cityCounts": CITY_COUNTS, "target": _TARGET, "ranges": RANGES}
 
 json.dump(P, open("/home/user/khitba/cluster_analysis/points.json", "w", encoding="utf-8"),
           ensure_ascii=False)
@@ -215,6 +241,8 @@ HTML = """<!DOCTYPE html>
  .cl .v{float:left;font-size:10.5px;padding:2px 7px;border-radius:10px;color:#fff;font-weight:700}
  .cl .cbx{float:right;width:auto;margin:2px 0 0 7px;cursor:pointer;transform:scale(1.1)}
  .cl .ct{color:#aac4e0;font-size:11px;margin-top:4px;line-height:1.55}
+ .compb{display:inline-block;font-size:10px;font-weight:700;color:#fff;padding:1px 7px;border-radius:9px}
+ .ctm{color:#9fb6d0;font-size:10.5px}
  .lbl{font-size:11px;color:#111;font-weight:700;text-shadow:0 0 3px #fff,0 0 3px #fff,0 0 3px #fff}
  .leaflet-tooltip.glbl{background:rgba(10,61,98,.92);color:#fff;font-weight:700;border:1px solid #ffd166;
    border-radius:11px;box-shadow:0 1px 4px rgba(0,0,0,.5);padding:2px 8px;white-space:nowrap;font-family:'Tajawal',sans-serif}
@@ -314,6 +342,7 @@ optCtl.onAdd=function(){const d=L.DomUtil.create('div','mapopts');
     '<label><input type="checkbox" id="names" onchange="toggleNames()"> أسماء كل المدن</label>'+
     '<label><input type="checkbox" id="gnames" onchange="renderGroupLabels()"> أسماء المجموعات</label>'+
     '<label><input type="checkbox" id="lines" checked onchange="toggleLines()"> خطوط المجموعات</label>'+
+    '<label><input type="checkbox" id="onlycomp" onchange="toggleComplete()"> المجموعات المكتملة فقط</label>'+
     '<label><input type="checkbox" id="vnone" checked onchange="toggleNone()"> محافظات خارج المجموعات</label>';
   L.DomEvent.disableClickPropagation(d);L.DomEvent.disableScrollPropagation(d);return d;};
 optCtl.addTo(map);
@@ -436,6 +465,19 @@ function copyOpt2to3(){const age=ageOf(curKey);const src=age+' — خيار 2',d
 function ageOf(k){return k.split(' — ')[0];}
 function optOf(k){return k.split(' — ')[1]||k;}
 function dsLabel(age){return /^[0-9]/.test(age)?'تحت '+age:age;}
+
+// ===== اكتمال المجموعات (يُحسب من أعداد الفرق لكل مدينة/فئة) =====
+let onlyComplete=false;
+const TARGET=DATA.target||6;
+function rangeAges(){return (DATA.ranges&&DATA.ranges[ageOf(curKey)])||[];}
+function clusterAgeTotal(cities,age){const cc=(DATA.cityCounts&&DATA.cityCounts[age])||{};
+  let s=0;cities.forEach(c=>{s+=(cc[c]||0);});return s;}
+function clusterMinTotal(cities){const ags=rangeAges();if(!ags.length)return null;
+  return Math.min.apply(null,ags.map(a=>clusterAgeTotal(cities,a)));}
+function clusterDone(cities){const ags=rangeAges();if(!ags.length)return true;
+  return ags.every(a=>clusterAgeTotal(cities,a)>=TARGET);}
+function passComplete(id){if(!onlyComplete)return true;const c=CL[id];return c?clusterDone(c.cities):false;}
+function toggleComplete(){onlyComplete=document.getElementById('onlycomp').checked;renderAll();}
 function ages(){const a=[];Object.keys(DS).forEach(k=>{const g=ageOf(k);if(!a.includes(g))a.push(g);});return a;}
 function firstKeyOfAge(age){return Object.keys(DS).find(k=>ageOf(k)===age);}
 function clMapOf(key){if(key===curKey)return CL;if(store[key])return store[key].CL;return buildLive(key).CL;}
@@ -457,7 +499,9 @@ function copyFromFirst(){const first=firstKeyOfAge(ageOf(curKey));if(curKey===fi
   ptCl={};DATA.points.forEach(p=>ptCl[p.n]=base.ptCl[p.n]||null);
   hidden=new Set();saveState();renderAll();refreshSelectors();
   document.getElementById('estat').innerHTML='✓ هذا الخيار صار مثل «'+dsLabel(ageOf(first))+' — '+optOf(first)+'»';}
-function isVisible(n){const id=ptCl[n];return id?!hidden.has(id):!hideNone;}
+function isVisible(n){const id=ptCl[n];
+  if(id)return !hidden.has(id)&&passComplete(id);
+  return !hideNone&&!onlyComplete;}
 function showAll(v){if(v)hidden.clear();else hidden=new Set(Object.keys(CL));saveState();renderAll();}
 function toggleNone(){hideNone=!document.getElementById('vnone').checked;saveState();renderMarkers();}
 
@@ -613,7 +657,7 @@ function renderGroupLabels(){glabels.clearLayers();
   const cb=document.getElementById('gnames');if(!cb||!cb.checked)return;
   const z=map.getZoom();
   const fs=z<=5?7:z<=6?8:z<=7?10:z<=8?11:z<=9?12:13;
-  Object.keys(CL).forEach(id=>{if(hidden.has(id))return;const cs=CL[id].cities;if(!cs.length)return;
+  Object.keys(CL).forEach(id=>{if(hidden.has(id)||!passComplete(id))return;const cs=CL[id].cities;if(!cs.length)return;
     let la=0,lo=0,n=0;cs.forEach(c=>{const p=byName[c];if(p){la+=p.lat;lo+=p.lon;n++;}});if(!n)return;la/=n;lo/=n;
     let anchor=cs[0],bd=1e9;cs.forEach(c=>{const q=byName[c];if(!q)return;const d=(q.lat-la)*(q.lat-la)+(q.lon-lo)*(q.lon-lo);if(d<bd){bd=d;anchor=c;}});
     const nm=id.replace(/^مجموعة /,'');if(byName[nm]&&cs.indexOf(nm)>=0)anchor=nm;
@@ -624,7 +668,7 @@ function renderGroupLabels(){glabels.clearLayers();
 map.on('zoomend',renderGroupLabels);
 function lineColor(min){return min>120?'#d73027':min>=60?'#f5b301':'#1a9850';}
 function renderLines(){lineLayer.clearLayers();
-  Object.keys(CL).forEach(id=>{if(hidden.has(id))return;const c=CL[id],ct=c.cities;
+  Object.keys(CL).forEach(id=>{if(hidden.has(id)||!passComplete(id))return;const c=CL[id],ct=c.cities;
     for(let i=0;i<ct.length;i++)for(let j=i+1;j<ct.length;j++){const a=byName[ct[i]],b=byName[ct[j]];if(!a||!b)continue;
       const A=ct[i],B=ct[j];const g=gd(A,B);const lbl=A+' ↔ '+B+': '+g.km+' كم / '+fmt(g.sec/60)+(g.est?' ≈ تقديري':'');
       L.polyline([[a.lat,a.lon],[b.lat,b.lon]],{color:lineColor(g.sec/60),weight:4,opacity:0.75,
@@ -655,10 +699,23 @@ function toggleNames(){const on=document.getElementById('names').checked;
     if(on)m.bindTooltip(p.n,{permanent:true,direction:'right',className:'lbl',offset:[6,0]}).openTooltip();
     else{m.unbindTooltip();m.bindTooltip(p.n,{direction:'top'});}});}
 
+// تمييز العدد للفرق
+function nTeam(n){n=+n||0;if(n===0)return 'لا فرق';if(n===1)return 'فريق واحد';if(n===2)return 'فريقان';
+  const t=n%100;return (t>=3&&t<=10)?(n+' فرق'):(n+' فريقًا');}
+// شارة الاكتمال لمجموعة
+function compChip(cities){const ags=rangeAges();if(!ags.length)return '';
+  const mn=clusterMinTotal(cities),done=mn>=TARGET;
+  return '<span class="compb" style="background:'+(done?'#1a9850':'#c0392b')+'">'+
+    (done?'✓ مكتملة':'✗ ناقصة')+'</span> <span class="ctm">أقل فئة: '+nTeam(mn)+'</span>';}
 // قائمة المجموعات
 function renderList(){const cl=document.getElementById('cllist');cl.innerHTML='';
-  const cc=document.getElementById('clcount');if(cc)cc.textContent=Object.keys(CL).length;
-  Object.keys(CL).sort((a,b)=>clKey(a)-clKey(b)).forEach(id=>{const c=CL[id],st=stats(c.cities);
+  const ids=Object.keys(CL).sort((a,b)=>clKey(a)-clKey(b));
+  const doneCnt=ids.filter(id=>clusterDone(CL[id].cities)).length;
+  const cc=document.getElementById('clcount');
+  if(cc)cc.innerHTML=(onlyComplete?doneCnt:ids.length)+
+    (rangeAges().length?' <span class="ctm">('+doneCnt+' مكتملة من '+ids.length+')</span>':'');
+  ids.forEach(id=>{if(onlyComplete&&!clusterDone(CL[id].cities))return;
+    const c=CL[id],st=stats(c.cities);
     const[v,vc]=verdict(st.mx/60,c.cities.length);
     const d=document.createElement('div');d.className='cl';d.style.borderRightColor=c.color;
     const cb=document.createElement('input');cb.type='checkbox';cb.className='cbx';cb.checked=!hidden.has(id);
@@ -668,7 +725,7 @@ function renderList(){const cl=document.getElementById('cllist');cl.innerHTML=''
     rb.onclick=e=>{e.stopPropagation();startRename(d,id);};
     const body=document.createElement('div');
     body.innerHTML='<span class="v" style="background:'+vc+'">'+v+'</span><b>'+id+'</b> — '+c.region+
-      '<div class="ct">أقصى زمن: '+(c.cities.length>1?fmt(st.mx/60):'—')+' · '+c.cities.length+' مدن'+
+      '<div class="ct">'+compChip(c.cities)+'<br>أقصى زمن: '+(c.cities.length>1?fmt(st.mx/60):'—')+' · '+c.cities.length+' مدن'+
       (st.nr?' · '+st.nr+' تقديري':'')+'<br>'+c.cities.join('، ')+'</div>';
     d.appendChild(cb);d.appendChild(rb);d.appendChild(body);d.onclick=()=>focusCluster(id);cl.appendChild(d);});}
 function startRename(d,id){d.onclick=null;d.innerHTML='';
