@@ -343,6 +343,7 @@ optCtl.onAdd=function(){const d=L.DomUtil.create('div','mapopts');
     '<label><input type="checkbox" id="gnames" onchange="renderGroupLabels()"> أسماء المجموعات</label>'+
     '<label><input type="checkbox" id="lines" checked onchange="toggleLines()"> خطوط المجموعات</label>'+
     '<label><input type="checkbox" id="onlycomp" onchange="toggleComplete()"> المكتملة في فئة واحدة على الأقل</label>'+
+    '<label><input type="checkbox" id="onlyteams" checked onchange="toggleTeams()"> المدن التي فيها فرق فقط</label>'+
     '<label><input type="checkbox" id="vnone" checked onchange="toggleNone()"> محافظات خارج المجموعات</label>';
   L.DomEvent.disableClickPropagation(d);L.DomEvent.disableScrollPropagation(d);return d;};
 optCtl.addTo(map);
@@ -481,6 +482,10 @@ function clusterDone(cities){const ags=compAges();if(!ags.length)return true;
   return clusterDoneAges(cities)>=1;}
 function passComplete(id){if(!onlyComplete)return true;const c=CL[id];return c?clusterDone(c.cities):false;}
 function toggleComplete(){onlyComplete=document.getElementById('onlycomp').checked;renderAll();}
+// مدينة فيها فريق واحد على الأقل في أي فئة
+let onlyTeams=true;
+function cityHasTeams(n){return compAges().some(a=>(((DATA.cityCounts&&DATA.cityCounts[a])||{})[n]||0)>0);}
+function toggleTeams(){onlyTeams=document.getElementById('onlyteams').checked;renderAll();}
 function ages(){const a=[];Object.keys(DS).forEach(k=>{const g=ageOf(k);if(!a.includes(g))a.push(g);});return a;}
 function firstKeyOfAge(age){return Object.keys(DS).find(k=>ageOf(k)===age);}
 function clMapOf(key){if(key===curKey)return CL;if(store[key])return store[key].CL;return buildLive(key).CL;}
@@ -502,7 +507,9 @@ function copyFromFirst(){const first=firstKeyOfAge(ageOf(curKey));if(curKey===fi
   ptCl={};DATA.points.forEach(p=>ptCl[p.n]=base.ptCl[p.n]||null);
   hidden=new Set();saveState();renderAll();refreshSelectors();
   document.getElementById('estat').innerHTML='✓ هذا الخيار صار مثل «'+dsLabel(ageOf(first))+' — '+optOf(first)+'»';}
-function isVisible(n){const id=ptCl[n];
+function isVisible(n){
+  if(onlyTeams&&!cityHasTeams(n))return false;
+  const id=ptCl[n];
   if(id)return !hidden.has(id)&&passComplete(id);
   return !hideNone&&!onlyComplete;}
 function showAll(v){if(v)hidden.clear();else hidden=new Set(Object.keys(CL));saveState();renderAll();}
@@ -673,7 +680,8 @@ function lineColor(min){return min>120?'#d73027':min>=60?'#f5b301':'#1a9850';}
 function renderLines(){lineLayer.clearLayers();
   Object.keys(CL).forEach(id=>{if(hidden.has(id)||!passComplete(id))return;const c=CL[id],ct=c.cities;
     for(let i=0;i<ct.length;i++)for(let j=i+1;j<ct.length;j++){const a=byName[ct[i]],b=byName[ct[j]];if(!a||!b)continue;
-      const A=ct[i],B=ct[j];const g=gd(A,B);const lbl=A+' ↔ '+B+': '+g.km+' كم / '+fmt(g.sec/60)+(g.est?' ≈ تقديري':'');
+      const A=ct[i],B=ct[j];if(onlyTeams&&(!cityHasTeams(A)||!cityHasTeams(B)))continue;
+      const g=gd(A,B);const lbl=A+' ↔ '+B+': '+g.km+' كم / '+fmt(g.sec/60)+(g.est?' ≈ تقديري':'');
       L.polyline([[a.lat,a.lon],[b.lat,b.lon]],{color:lineColor(g.sec/60),weight:4,opacity:0.75,
         dashArray:g.est?'5,5':null}).bindTooltip(lbl).bindPopup(()=>linePopup(A,B)).addTo(lineLayer);}});
   document.getElementById('lines').checked?map.addLayer(lineLayer):map.removeLayer(lineLayer);}
