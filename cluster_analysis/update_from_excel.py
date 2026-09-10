@@ -12,7 +12,7 @@ from collections import defaultdict, Counter
 
 BASE = "/home/user/khitba/cluster_analysis/"
 XLSX = sys.argv[1] if len(sys.argv) > 1 else BASE + "latest.xlsx"
-CANON = {"جيزان": "جازان", "الجوف": "سكاكا"}
+CANON = {"جيزان": "جازان", "الجوف": "سكاكا", "ابها": "أبها"}
 # التجاوزات اليدوية أُلغيت: الاتحاد ضبط التصنيف داخل الإكسل نفسه (مجموعة الخبر/الرس ودمج عنيزة).
 GRP_OVERRIDE = {}
 GRP_MERGE = {}
